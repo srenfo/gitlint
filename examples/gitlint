@@ -48,3 +48,11 @@ ignore-merge-commits=false
 # By specifying this rule, developers can only change the file when they explicitly reference
 # it in the commit message.
 files=gitlint/rules.py,README.md
+
+# You can instantiate rules multiple times by giving them unique identifiers after a colon, like shown below:
+# Note that it's possible (and quite easy) to create conflicting rules this way, so use caution!
+[title-must-not-contain-word:my-rule-identifier]
+words=hello,bye
+
+[title-must-not-contain-word:extra-words]
+words=foo,bar

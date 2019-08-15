@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-
 try:
     # python 2.x
     from mock import patch
@@ -12,6 +11,8 @@ from gitlint.config import LintConfig, LintConfigError, LintConfigGenerator, GIT
 from gitlint import options
 from gitlint.tests.base import BaseTestCase
 from gitlint.utils import ustr
+
+from collections import OrderedDict
 
 
 class LintConfigTests(BaseTestCase):
@@ -31,6 +32,41 @@ class LintConfigTests(BaseTestCase):
         # get non-existing
         rule = config.get_rule(u'föo')
         self.assertIsNone(rule)
+
+    def test_add_rule(self):
+        config = LintConfig()
+        config._rules.clear()
+
+        config.add_rule(rules.TitleTrailingWhitespace, u"föobar", {"my_attr": u"föo"})
+        expected_rule = rules.TitleTrailingWhitespace()
+        expected_rule.id = u"föobar"
+        expected_rule.my_attr = u"föo"
+
+        # Assert that rule was added and we can retrieve it
+        self.assertEqual(config._rules, OrderedDict([(u"föobar", expected_rule)]))
+        self.assertEqual(config.get_rule(u"föobar"), expected_rule)
+
+        # Assert we didn't edit the class id itself
+        self.assertEqual(rules.TitleTrailingWhitespace.id, "T2")
+
+    def test_add_get_qualified_rule(self):
+        config = LintConfig()
+
+        config.add_qualified_rule(u"title-trailing-whitespace:föobar")
+        config.add_qualified_rule(u"T3:hürdur")
+
+        expected_rule_1 = rules.TitleTrailingWhitespace()
+        expected_rule_1.id = u"T2:föobar"
+        expected_rule_2 = rules.TitleTrailingPunctuation()
+        expected_rule_2.id = u"T3:hürdur"
+
+        # get by id
+        self.assertEqual(config.get_rule(u"T2:föobar"), expected_rule_1)
+        self.assertEqual(config.get_rule(u"T3:hürdur"), expected_rule_2)
+
+        # get by name
+        self.assertEqual(config.get_rule(u"title-trailing-whitespace:föobar"), expected_rule_1)
+        self.assertEqual(config.get_rule(u"title-trailing-punctuation:hürdur"), expected_rule_2)
 
     def test_set_rule_option(self):
         config = LintConfig()

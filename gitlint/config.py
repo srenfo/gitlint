@@ -38,8 +38,10 @@ class LintConfigError(Exception):
 
 class LintConfig(object):
     """ Class representing gitlint configuration.
-        Contains active config as well as number of methods to easily get/set the config.
+        Contains active config and rules as well as number of methods to easily get/set the config.
     """
+
+    RULE_QUALIFIER_SYMBOL = ":"
 
     # Default tuple of rule classes (tuple because immutable).
     default_rule_classes = (rules.IgnoreByTitle,
@@ -62,7 +64,10 @@ class LintConfig(object):
 
     def __init__(self):
         # Use an ordered dict so that the order in which rules are applied is always the same
-        self._rules = OrderedDict([(rule_cls.id, rule_cls()) for rule_cls in self.default_rule_classes])
+        self._rules = OrderedDict()
+        for rule_cls in self.default_rule_classes:
+            self.add_rule(rule_cls, rule_cls.id)
+
         self._verbosity = options.IntOption('verbosity', 3, "Verbosity")
         self._ignore_merge_commits = options.BoolOption('ignore-merge-commits', True, "Ignore merge commits")
         self._ignore_fixup_commits = options.BoolOption('ignore-fixup-commits', True, "Ignore fixup commits")
@@ -159,9 +164,7 @@ class LintConfig(object):
 
             # Add the newly found rules to the existing rules
             for rule_class in rule_classes:
-                rule_obj = rule_class()
-                rule_obj.is_user_defined = True
-                self._rules[rule_class.id] = rule_obj
+                self.add_rule(rule_class, rule_class.id, {"is_user_defined": True})
 
         except (options.RuleOptionError, rules.UserRuleError) as e:
             raise LintConfigError(ustr(e))
@@ -201,9 +204,7 @@ class LintConfig(object):
 
                 # If contrib rule exists, instantiate it and add it to the rules list
                 if rule_class:
-                    rule_obj = rule_class()
-                    rule_obj.is_contrib = True
-                    self._rules[rule_class.id] = rule_obj
+                    self.add_rule(rule_class, rule_class.id, {"is_contrib": True})
                 else:
                     raise LintConfigError(u"No contrib rule with id or name '{0}' found.".format(ustr(rule_id_or_name)))
 
@@ -224,14 +225,62 @@ class LintConfig(object):
         # Create a new list based on _rules.values() because in python 3, values() is a ValuesView as opposed to a list
         return [rule for rule in self._rules.values()]
 
-    def get_rule(self, rule_id_or_name):
-        # try finding rule by id
+    def _get_unqualified_rule(self, rule_id_or_name):
+        """ Retrieve rule that is known to not be qualified: i.e. it does not have a
+            RULE_QUALIFIER_SYMBOL in its name """
         rule_id_or_name = ustr(rule_id_or_name)  # convert to unicode first
+        # try finding rule by id
         rule = self._rules.get(rule_id_or_name)
         # if not found, try finding rule by name
         if not rule:
             rule = next((rule for rule in self._rules.values() if rule.name == rule_id_or_name), None)
         return rule
+
+    @staticmethod
+    def _get_canonical_rule_id(rule_class, name_specifier):
+        return rule_class.id + LintConfig.RULE_QUALIFIER_SYMBOL + name_specifier
+
+    def get_rule(self, rule_id_or_name):
+        rule_name_parts = rule_id_or_name.split(self.RULE_QUALIFIER_SYMBOL, 1)
+        # If the rule we're trying to fetch is qualified, then determine its canonical name first
+        if len(rule_name_parts) > 1:  # qualified rule
+            unqualified_rule = self._get_unqualified_rule(rule_name_parts[0])
+            cannonical_rule_id = self._get_canonical_rule_id(unqualified_rule.__class__, rule_name_parts[1])
+            return self._rules.get(cannonical_rule_id)
+
+        # else:  # unqualified rule
+        return self._get_unqualified_rule(rule_id_or_name)
+
+    def add_rule(self, rule_class, rule_id, rule_attrs=None):
+        """ Instantiates and adds a rule to the set of rules managed by this LintConfig.
+            Note: There can be multiple instantiations of the same rule_class in the LintConfig, as long as there
+            rule_id is unique.
+            :param rule_class python class representing the rule
+            :param rule_id unique identifier for the rule. If not unique, it will
+                           overwrite the existing rule with that id
+            :param rule_attrs dictionary of attributes to set on the instantiated rule obj
+        """
+        rule_obj = rule_class()
+        rule_obj.id = rule_id
+        if rule_attrs:
+            for key, val in rule_attrs.items():
+                setattr(rule_obj, key, val)
+        self._rules[rule_obj.id] = rule_obj
+
+    def add_qualified_rule(self, qualified_rule_id_or_name):
+        """ Adds a new qualified rule to the LintConfig by looking up the rule_class identified by the first part of
+            the qualified_rule_id_or_name (=the class-specifier), and then instantiating a new rule from that class,
+            identifying it with the remainder (=the name-specifier) of the qualified_rule_id_or_name.
+            Example:
+                qualified_rule_id_or_name = "title-must-not-contain-word:my-user-defined-name"
+                                            |        class-specifier    |    name-specifier  |
+             -> this will add a rule 'T5:my-user-defined-name' to LingConfig.rules
+             -> 'T5:my-user-defined-name' = canonical identifier for the TitleMustNotContainWord rule
+        """
+        rule_name_parts = qualified_rule_id_or_name.split(self.RULE_QUALIFIER_SYMBOL, 1)
+        unqualified_rule = self._get_unqualified_rule(rule_name_parts[0])
+        cannonical_rule_id = self._get_canonical_rule_id(unqualified_rule.__class__, rule_name_parts[1])
+        self.add_rule(unqualified_rule.__class__, cannonical_rule_id)
 
     def _get_option(self, rule_name_or_id, option_name):
         rule_name_or_id = ustr(rule_name_or_id)  # convert to unicode first
@@ -393,6 +442,12 @@ class LintConfigBuilder(object):
             for option_name, option_value in section_dict.items():
                 # Skip over the general section, as we've already done that above
                 if section_name != "general":
+
+                    # For any qualified rules we find: instantiate them in the config
+                    # Needed as these extra instances of rules are not active by default
+                    if config.RULE_QUALIFIER_SYMBOL in section_name:
+                        config.add_qualified_rule(section_name)
+
                     config.set_rule_option(section_name, option_name, option_value)
 
         return config

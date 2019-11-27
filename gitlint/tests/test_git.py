@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 
+import copy
 import datetime
 import os
 
@@ -50,7 +51,9 @@ class GitTests(BaseTestCase):
             call("log", sample_sha, "-1", "--pretty=%aN%x00%aE%x00%ai%x00%P%n%B", **self.expected_sh_special_args),
             call('diff-tree', '--no-commit-id', '--name-only', '-r', sample_sha, **self.expected_sh_special_args)
         ]
-        self.assertListEqual(sh.git.mock_calls, expected_calls)
+
+        # Only first 'git log' call should've happened at this point
+        self.assertListEqual(sh.git.mock_calls, expected_calls[:-2])
 
         last_commit = context.commits[-1]
         self.assertEqual(last_commit.message.title, u"cömmit-title")
@@ -64,7 +67,14 @@ class GitTests(BaseTestCase):
         self.assertFalse(last_commit.is_fixup_commit)
         self.assertFalse(last_commit.is_squash_commit)
         self.assertFalse(last_commit.is_revert_commit)
+
+        # First 2 'git log' calls should've happened at this point
+        self.assertListEqual(sh.git.mock_calls, expected_calls[:-1])
+
         self.assertListEqual(last_commit.changed_files, ["file1.txt", u"påth/to/file2.txt"])
+
+        # All expected calls should've happened at this point
+        self.assertListEqual(sh.git.mock_calls, expected_calls)
 
     @patch('gitlint.git.sh')
     def test_from_local_repository_specific_ref(self, sh):
@@ -84,7 +94,9 @@ class GitTests(BaseTestCase):
             call("log", sample_sha, "-1", "--pretty=%aN%x00%aE%x00%ai%x00%P%n%B", **self.expected_sh_special_args),
             call('diff-tree', '--no-commit-id', '--name-only', '-r', sample_sha, **self.expected_sh_special_args)
         ]
-        self.assertListEqual(sh.git.mock_calls, expected_calls)
+
+        # Only first 'git log' call should've happened at this point
+        self.assertEqual(sh.git.mock_calls, expected_calls[:-2])
 
         last_commit = context.commits[-1]
         self.assertEqual(last_commit.message.title, u"cömmit-title")
@@ -98,7 +110,14 @@ class GitTests(BaseTestCase):
         self.assertFalse(last_commit.is_fixup_commit)
         self.assertFalse(last_commit.is_squash_commit)
         self.assertFalse(last_commit.is_revert_commit)
+
+        # First 2 'git log' calls should've happened at this point
+        self.assertListEqual(sh.git.mock_calls, expected_calls[:-1])
+
         self.assertListEqual(last_commit.changed_files, ["file1.txt", u"påth/to/file2.txt"])
+
+        # All expected calls should've happened at this point
+        self.assertListEqual(sh.git.mock_calls, expected_calls)
 
     @patch('gitlint.git.sh')
     def test_get_latest_commit_merge_commit(self, sh):
@@ -119,7 +138,8 @@ class GitTests(BaseTestCase):
             call('diff-tree', '--no-commit-id', '--name-only', '-r', sample_sha, **self.expected_sh_special_args)
         ]
 
-        self.assertEqual(sh.git.mock_calls, expected_calls)
+        # Only first 'git log' call should've happened at this point
+        self.assertEqual(sh.git.mock_calls, expected_calls[:-2])
 
         last_commit = context.commits[-1]
         self.assertEqual(last_commit.message.title, u"Merge \"foo bår commit\"")
@@ -133,7 +153,14 @@ class GitTests(BaseTestCase):
         self.assertFalse(last_commit.is_fixup_commit)
         self.assertFalse(last_commit.is_squash_commit)
         self.assertFalse(last_commit.is_revert_commit)
+
+        # First 2 'git log' calls should've happened at this point
+        self.assertListEqual(sh.git.mock_calls, expected_calls[:-1])
+
         self.assertListEqual(last_commit.changed_files, ["file1.txt", u"påth/to/file2.txt"])
+
+        # All expected calls should've happened at this point
+        self.assertEqual(sh.git.mock_calls, expected_calls)
 
     @patch('gitlint.git.sh')
     def test_get_latest_commit_fixup_squash_commit(self, sh):
@@ -156,7 +183,8 @@ class GitTests(BaseTestCase):
                 call('diff-tree', '--no-commit-id', '--name-only', '-r', sample_sha, **self.expected_sh_special_args)
             ]
 
-            self.assertEqual(sh.git.mock_calls, expected_calls)
+            # Only first 'git log' call should've happened at this point
+            self.assertEqual(sh.git.mock_calls, expected_calls[:-2])
 
             last_commit = context.commits[-1]
             self.assertEqual(last_commit.message.title, u"{0}! \"foo bår commit\"".format(commit_type))
@@ -167,6 +195,9 @@ class GitTests(BaseTestCase):
                                                                  tzinfo=dateutil.tz.tzoffset("+0100", 3600)))
             self.assertListEqual(last_commit.parents, [u"åbc"])
 
+            # First 2 'git log' calls should've happened at this point
+            self.assertEqual(sh.git.mock_calls, expected_calls[:-1])
+
             # Asserting that squash and fixup are correct
             for type in commit_types:
                 attr = "is_" + type + "_commit"
@@ -176,6 +207,8 @@ class GitTests(BaseTestCase):
             self.assertFalse(last_commit.is_revert_commit)
             self.assertListEqual(last_commit.changed_files, ["file1.txt", u"påth/to/file2.txt"])
 
+            # All expected calls should've happened at this point
+            self.assertEqual(sh.git.mock_calls, expected_calls)
             sh.git.reset_mock()
 
     @patch('gitlint.git.sh')
@@ -375,13 +408,13 @@ class GitTests(BaseTestCase):
         now = datetime.datetime.utcnow()
         context1 = GitContext()
         commit_message1 = GitCommitMessage(context1, u"tëst\n\nfoo", u"tëst\n\nfoo", u"tēst", ["", u"föo"])
-        commit1 = GitCommit(context1, commit_message1, now, u"Jöhn Smith", u"jöhn.smith@test.com", None, True,
+        commit1 = GitCommit(context1, commit_message1, u"shä", now, u"Jöhn Smith", u"jöhn.smith@test.com", None,
                             [u"föo/bar"])
         context1.commits = [commit1]
 
         context2 = GitContext()
         commit_message2 = GitCommitMessage(context2, u"tëst\n\nfoo", u"tëst\n\nfoo", u"tēst", ["", u"föo"])
-        commit2 = GitCommit(context2, commit_message1, now, u"Jöhn Smith", u"jöhn.smith@test.com", None, True,
+        commit2 = GitCommit(context2, commit_message1, u"shä", now, u"Jöhn Smith", u"jöhn.smith@test.com", None,
                             [u"föo/bar"])
         context2.commits = [commit2]
 
@@ -389,14 +422,16 @@ class GitTests(BaseTestCase):
         self.assertEqual(commit_message1, commit_message2)
         self.assertEqual(commit1, commit2)
 
+        kwargs = {'context': commit1.context, 'message': commit1.message, 'sha': commit1.sha, 'date': commit1.date,
+                  'author_name': commit1.author_name, 'author_email': commit1.author_email, 'parents': commit1.parents,
+                  'changed_files': commit1.changed_files}
+
         # Check that objects are inequal when changing a single attribute
-        for attr in ['message', 'author_name', 'author_email', 'parents', 'is_merge_commit', 'is_fixup_commit',
-                     'is_squash_commit', 'is_revert_commit', 'changed_files']:
-            prev_val = getattr(commit1, attr)
-            setattr(commit1, attr, u"föo")
-            self.assertNotEqual(commit1, commit2)
-            setattr(commit1, attr, prev_val)
-            self.assertEqual(commit1, commit2)
+        for attr in kwargs:
+            kwargs_copy = copy.deepcopy(kwargs)
+            self.assertEqual(commit1, GitCommit(**kwargs_copy))
+            kwargs_copy[attr] = u"föo"
+            self.assertNotEqual(commit1, GitCommit(**kwargs_copy))
 
     @patch("gitlint.git._git")
     def test_git_commentchar(self, git):
